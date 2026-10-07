@@ -1,0 +1,1724 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Журнал сделок — TradeLog</title>
+  <meta name="description" content="Личный журнал трейдера — записывайте сделки, прикрепляйте скриншоты и анализируйте результаты." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d0f14; --surface: #14171f; --card: #1a1d27; --border: #252836;
+      --accent: #5b6cf9; --accent-h: #7b8bff; --green: #34d399; --red: #f87171;
+      --yellow: #fbbf24; --text: #e8eaf0; --muted: #6b7280;
+      --radius: 12px; --radius-sm: 8px; --shadow: 0 8px 32px rgba(0,0,0,.55);
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: Inter, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.6; }
+
+    /* Header */
+    header { position: sticky; top: 0; z-index: 50; background: rgba(13,15,20,.85); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); padding: 0 24px; }
+    .header-inner { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 60px; }
+    .logo { display: flex; align-items: center; gap: 10px; font-size: 1.05rem; font-weight: 600; letter-spacing: -.3px; }
+    .logo-icon { width: 32px; height: 32px; background: linear-gradient(135deg,#5b6cf9,#8b5cf6); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: .9rem; }
+    .btn-add { display: flex; align-items: center; gap: 7px; background: var(--accent); color: #fff; border: none; cursor: pointer; padding: 8px 18px; border-radius: var(--radius-sm); font-size: .875rem; font-weight: 500; transition: background .18s, transform .12s, box-shadow .18s; }
+    .btn-add:hover { background: var(--accent-h); box-shadow: 0 0 18px rgba(91,108,249,.45); transform: translateY(-1px); }
+    .btn-add:active { transform: translateY(0); }
+
+    /* Main */
+    main { max-width: 1200px; margin: 0 auto; padding: 32px 24px 80px; }
+    .stats-bar { display: grid; grid-template-columns: repeat(5,1fr); gap: 14px; margin-bottom: 32px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; }
+    .stat-label { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 4px; }
+    .stat-val { font-size: 1.4rem; font-weight: 700; }
+    .section-title { font-size: .8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 16px; }
+    .trades-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(320px,1fr)); gap: 18px; }
+
+    /* Trade Card */
+    .trade-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; transition: transform .2s, box-shadow .2s, border-color .2s; animation: fadeUp .3s ease both; cursor: pointer; }
+    @keyframes fadeUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+    .trade-card:hover { transform: translateY(-3px); box-shadow: var(--shadow); border-color: rgba(91,108,249,.4); }
+    .trade-card-img { width: 100%; height: 170px; object-fit: cover; display: block; border-bottom: 1px solid var(--border); }
+    .trade-card-img-placeholder { width: 100%; height: 170px; background: var(--surface); display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 2rem; border-bottom: 1px solid var(--border); }
+    .trade-card-body { padding: 14px 16px; }
+    .trade-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 6px; flex-wrap: wrap; }
+    .asset-tag { font-size: .8rem; font-weight: 700; background: rgba(91,108,249,.15); color: var(--accent-h); padding: 3px 10px; border-radius: 20px; }
+    .direction-tag { font-size: .75rem; font-weight: 700; padding: 3px 10px; border-radius: 20px; }
+    .dir-long { background: rgba(52,211,153,.15); color: var(--green); }
+    .dir-short { background: rgba(248,113,113,.15); color: var(--red); }
+    .risk-badge { font-size: .72rem; font-weight: 600; padding: 2px 9px; border-radius: 20px; }
+    .risk-low { background: rgba(52,211,153,.15); color: var(--green); }
+    .risk-medium { background: rgba(251,191,36,.15); color: var(--yellow); }
+    .risk-high { background: rgba(248,113,113,.15); color: var(--red); }
+    .result-badge { font-size: .78rem; font-weight: 700; padding: 3px 10px; border-radius: 20px; }
+    .result-pos { background: rgba(52,211,153,.15); color: var(--green); }
+    .result-neg { background: rgba(248,113,113,.15); color: var(--red); }
+    .trade-datetime { font-size: .73rem; color: var(--muted); margin-bottom: 6px; }
+    .trade-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+    .chip { font-size: .7rem; color: var(--muted); background: var(--surface); border: 1px solid var(--border); padding: 2px 8px; border-radius: 20px; }
+    .trade-desc-preview { font-size: .82rem; color: #a0a4b8; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 10px; }
+    .trade-card-footer { display: flex; align-items: center; justify-content: space-between; padding-top: 8px; border-top: 1px solid var(--border); }
+    .open-hint { font-size: .73rem; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+    .btn-delete { background: none; border: none; cursor: pointer; color: var(--muted); font-size: .8rem; display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; transition: color .15s, background .15s; }
+    .btn-delete:hover { color: var(--red); background: rgba(248,113,113,.08); }
+    .empty-state { text-align: center; padding: 80px 20px; color: var(--muted); }
+    .empty-state .icon { font-size: 3rem; margin-bottom: 16px; }
+    .empty-state p { font-size: .9rem; line-height: 1.7; }
+
+    /* Overlay */
+    .overlay { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,.7); backdrop-filter: blur(5px); display: flex; align-items: center; justify-content: center; padding: 16px; opacity: 0; visibility: hidden; transition: opacity .25s, visibility .25s; }
+    .overlay.open { opacity: 1; visibility: visible; }
+
+    /* Modal */
+    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; width: 100%; max-width: 780px; max-height: 92vh; overflow-y: auto; box-shadow: var(--shadow); transform: scale(.94) translateY(10px); transition: transform .25s; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+    .overlay.open .modal { transform: scale(1) translateY(0); }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px 0; }
+    .modal-title { font-size: 1rem; font-weight: 600; }
+    .btn-close { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 1.2rem; line-height: 1; padding: 4px 8px; border-radius: 6px; transition: color .15s, background .15s; }
+    .btn-close:hover { color: var(--text); background: var(--card); }
+    .modal-body { padding: 18px 24px 24px; }
+
+    .form-section { margin-bottom: 18px; }
+    .form-section-title { font-size: .68rem; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: .7px; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+    .form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+    .form-group { display: flex; flex-direction: column; gap: 5px; }
+    .form-group.full { grid-column: 1/-1; }
+    label { font-size: .75rem; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+    input, select, textarea { background: var(--card); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); padding: 9px 12px; font-size: .875rem; font-family: inherit; transition: border-color .18s, box-shadow .18s; outline: none; width: 100%; }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(91,108,249,.18); }
+    select option { background: var(--card); }
+    textarea { resize: vertical; min-height: 76px; line-height: 1.55; }
+    input[type="date"]::-webkit-calendar-picker-indicator, input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(.5); cursor: pointer; }
+
+    /* File upload */
+    .file-upload-area { border: 2px dashed var(--border); border-radius: var(--radius-sm); padding: 18px 14px; text-align: center; cursor: pointer; transition: border-color .18s, background .18s; position: relative; }
+    .file-upload-area:hover, .file-upload-area.drag-over { border-color: var(--accent); background: rgba(91,108,249,.05); }
+    .file-upload-area.has-image { border-color: rgba(52,211,153,.4); }
+    /* file input всегда поверх контента, но когда есть фото — снимаем pointer-events чтобы не блокировать скролл/зум */
+    .file-upload-area input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; z-index: 3; }
+    .file-upload-area.has-image input[type="file"] { pointer-events: none; }
+    /* Кнопка «Заменить» поверх фото */
+    .btn-reupload { display: none; position: absolute; top: 8px; left: 8px; z-index: 5; background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.2); color: #fff; font-size: .72rem; padding: 5px 11px; border-radius: 6px; cursor: pointer; backdrop-filter: blur(4px); transition: background .15s; font-family: inherit; gap: 4px; }
+    .btn-reupload:hover { background: rgba(91,108,249,.5); border-color: rgba(91,108,249,.7); }
+    .file-upload-area.has-image .btn-reupload { display: flex; align-items: center; }
+    .file-upload-icon { font-size: 1.3rem; margin-bottom: 4px; }
+    .file-upload-text { font-size: .78rem; color: var(--muted); }
+    .file-name { font-size: .75rem; color: var(--green); margin-top: 5px; word-break: break-all; display: none; }
+    .preview-thumb { width: 100%; max-height: 120px; object-fit: cover; border-radius: var(--radius-sm); margin-top: 8px; display: none; border: 1px solid var(--border); }
+
+    /* Large screenshot upload areas */
+    .upload-full { width: 100%; }
+    .upload-full .file-upload-area { padding: 0; min-height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .upload-full .file-upload-area.has-image { padding: 0; }
+    .upload-full .file-upload-area.has-image .upload-placeholder { display: none; }
+    .upload-placeholder { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 20px 14px; pointer-events: none; }
+    .preview-thumb-large { width: 100%; height: auto; max-height: none; object-fit: contain; border-radius: var(--radius-sm); display: none; border: none; cursor: zoom-in; }
+    .preview-thumb-large.active { display: block; }
+    .upload-toolbar { display: none; align-items: center; justify-content: space-between; padding: 8px 12px; background: rgba(0,0,0,.4); border-top: 1px solid var(--border); width: 100%; }
+    .upload-toolbar.active { display: flex; }
+    .btn-zoom-in, .btn-zoom-out, .btn-clear-img { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); color: var(--muted); padding: 4px 10px; border-radius: 6px; font-size: .75rem; cursor: pointer; transition: all .15s; font-family: inherit; }
+    .btn-zoom-in:hover, .btn-zoom-out:hover { background: rgba(91,108,249,.2); color: var(--accent-h); border-color: rgba(91,108,249,.4); }
+    .btn-clear-img { color: var(--red); }
+    .btn-clear-img:hover { background: rgba(248,113,113,.12); border-color: rgba(248,113,113,.4); }
+    .img-scale-info { font-size: .72rem; color: var(--muted); }
+    .upload-img-wrap { width: 100%; overflow: auto; cursor: grab; user-select: none; }
+    .upload-img-wrap:active { cursor: grabbing; }
+    .upload-img-wrap img { transform-origin: top left; transition: transform .2s; display: block; }
+
+    /* ═══ PHOTO LIGHTBOX ══════════════════════════════════════════ */
+    .photo-lb { position: fixed; inset: 0; z-index: 900; background: rgba(0,0,0,.97); display: flex; flex-direction: column; opacity: 0; visibility: hidden; transition: opacity .22s, visibility .22s; user-select: none; }
+    .photo-lb.open { opacity: 1; visibility: visible; }
+
+    /* Top bar */
+    .plb-topbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px; background: rgba(255,255,255,.04); border-bottom: 1px solid rgba(255,255,255,.08); flex-shrink: 0; gap: 12px; }
+    .plb-tabs { display: flex; gap: 6px; }
+    .plb-tab { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); color: rgba(255,255,255,.55); padding: 5px 14px; border-radius: 6px; font-size: .78rem; font-weight: 500; cursor: pointer; transition: all .15s; font-family: inherit; }
+    .plb-tab:hover { background: rgba(255,255,255,.13); color: #fff; }
+    .plb-tab.active { background: rgba(91,108,249,.25); border-color: rgba(91,108,249,.55); color: #a0aaff; }
+    .plb-tab.no-img { opacity: .35; cursor: default; pointer-events: none; }
+    .plb-controls { display: flex; align-items: center; gap: 8px; }
+    .plb-ctrl-btn { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); color: rgba(255,255,255,.7); width: 34px; height: 34px; border-radius: 8px; font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .15s; font-family: inherit; }
+    .plb-ctrl-btn:hover { background: rgba(91,108,249,.25); border-color: rgba(91,108,249,.5); color: #fff; }
+    .plb-scale-badge { font-size: .78rem; color: rgba(255,255,255,.5); min-width: 46px; text-align: center; font-variant-numeric: tabular-nums; }
+    .plb-close-btn { background: rgba(248,113,113,.12); border: 1px solid rgba(248,113,113,.3); color: #f87171; padding: 6px 14px; border-radius: 8px; font-size: .82rem; cursor: pointer; transition: all .15s; font-family: inherit; white-space: nowrap; }
+    .plb-close-btn:hover { background: rgba(248,113,113,.25); }
+
+    /* Canvas / image area */
+    .plb-canvas { flex: 1; overflow: hidden; display: flex; align-items: center; justify-content: center; position: relative; }
+    .plb-canvas.dragging { cursor: grabbing; }
+    .plb-img-wrap { position: absolute; top: 50%; left: 50%; transform-origin: 0 0; will-change: transform; }
+    .plb-img-wrap img { display: block; border-radius: 6px; box-shadow: 0 0 80px rgba(0,0,0,.8); max-width: none; max-height: none; pointer-events: none; image-rendering: auto; }
+
+    /* Bottom hint */
+    .plb-hint { flex-shrink: 0; text-align: center; padding: 8px 16px; font-size: .72rem; color: rgba(255,255,255,.25); border-top: 1px solid rgba(255,255,255,.05); }
+
+    /* Detail image — clickable */
+    .detail-img { cursor: zoom-in !important; transition: opacity .15s, transform .15s; }
+    .detail-img:hover { opacity: .88; transform: scale(1.015); }
+
+    /* legacy compat — hide old lightbox */
+    .zoom-lightbox { display: none !important; }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; padding-top: 16px; margin-top: 4px; border-top: 1px solid var(--border); }
+    .btn-cancel { background: none; border: 1px solid var(--border); color: var(--muted); padding: 9px 20px; border-radius: var(--radius-sm); font-size: .875rem; cursor: pointer; transition: background .15s, color .15s; }
+    .btn-cancel:hover { background: var(--card); color: var(--text); }
+    .btn-save { background: var(--accent); color: #fff; border: none; padding: 9px 24px; border-radius: var(--radius-sm); font-size: .875rem; font-weight: 500; cursor: pointer; transition: background .18s, transform .12s; }
+    .btn-save:hover { background: var(--accent-h); }
+    .btn-save:active { transform: scale(.97); }
+
+    /* Detail overlay */
+    .detail-overlay { position: fixed; inset: 0; z-index: 300; background: rgba(0,0,0,.82); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; padding: 16px; opacity: 0; visibility: hidden; transition: opacity .25s, visibility .25s; }
+    .detail-overlay.open { opacity: 1; visibility: visible; }
+    .detail-modal { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; width: 100%; max-width: 920px; max-height: 92vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.7); display: flex; flex-direction: column; transform: scale(.93); transition: transform .25s; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+    .detail-overlay.open .detail-modal { transform: scale(1); }
+    .detail-screenshots { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; background: #0a0b10; border-radius: 16px 16px 0 0; padding: 40px 12px 12px; }
+    .detail-screenshot-block { display: flex; flex-direction: column; }
+    .detail-screenshot-label { font-size: .68rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; text-align: center; }
+    .detail-img { width: 100%; max-height: 300px; object-fit: contain; display: block; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+    .detail-img-none { height: 160px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 2rem; background: var(--card); border-radius: var(--radius-sm); border: 1px solid var(--border); }
+    .detail-img-wrap { position: relative; }
+    .detail-close { position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.1); color: #fff; font-size: 1rem; line-height: 1; padding: 6px 10px; border-radius: 8px; cursor: pointer; backdrop-filter: blur(4px); transition: background .15s; z-index: 10; }
+    .detail-close:hover { background: rgba(0,0,0,.8); }
+    .detail-body { padding: 22px 26px 26px; }
+    .detail-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+    .detail-asset { font-size: 1.35rem; font-weight: 700; letter-spacing: -.3px; }
+    .detail-top-badges { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .detail-meta { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 18px; }
+    .detail-meta-item { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 14px; }
+    .detail-meta-label { font-size: .68rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 3px; }
+    .detail-meta-val { font-size: .92rem; font-weight: 600; }
+    .detail-section { margin-bottom: 16px; }
+    .detail-section-title { font-size: .72rem; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 8px; }
+    .detail-desc { font-size: .9rem; color: #b0b4c8; line-height: 1.7; white-space: pre-wrap; }
+    .detail-nodesc { font-size: .88rem; color: var(--muted); font-style: italic; }
+    .detail-emotions-block { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 16px; font-size: .9rem; color: #b0b4c8; line-height: 1.6; }
+    .detail-mistake-block { background: rgba(248,113,113,.07); border: 1px solid rgba(248,113,113,.3); border-radius: var(--radius-sm); padding: 12px 16px; font-size: .9rem; color: #f8a0a0; line-height: 1.6; }
+
+    /* Mistake section — появляется только при убытке */
+    .mistake-section { overflow: hidden; max-height: 0; opacity: 0; transition: max-height .35s ease, opacity .3s ease, margin .3s ease; margin-top: 0; }
+    .mistake-section.visible { max-height: 300px; opacity: 1; margin-top: 0; }
+    .mistake-section .form-section-title { color: var(--red); }
+    .mistake-section textarea { border-color: rgba(248,113,113,.35); }
+    .mistake-section textarea:focus { border-color: var(--red); box-shadow: 0 0 0 3px rgba(248,113,113,.15); }
+
+    /* Toast */
+    .toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(20px); background: #1e2130; border: 1px solid rgba(52,211,153,.35); color: var(--green); padding: 13px 24px; border-radius: 40px; font-size: .875rem; font-weight: 500; box-shadow: 0 8px 24px rgba(0,0,0,.5); display: flex; align-items: center; gap: 9px; z-index: 999; opacity: 0; visibility: hidden; transition: opacity .25s, transform .25s, visibility .25s; white-space: nowrap; }
+    .toast.show { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+
+    /* Tabs */
+    .tab-nav { display: flex; gap: 4px; }
+    .tab-btn { background: none; border: 1px solid transparent; color: var(--muted); padding: 6px 16px; border-radius: var(--radius-sm); font-size: .85rem; font-weight: 500; cursor: pointer; transition: color .18s, background .18s, border-color .18s; font-family: inherit; }
+    .tab-btn:hover { color: var(--text); background: var(--card); }
+    .tab-btn.active { color: var(--accent-h); background: rgba(91,108,249,.12); border-color: rgba(91,108,249,.3); }
+    .tab-page { display: none; }
+    .tab-page.active { display: block; }
+
+    /* Chart page */
+    .chart-page { animation: fadeUp .3s ease both; }
+    .chart-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px 24px 20px; margin-bottom: 24px; position: relative; }
+    .chart-wrap canvas { max-height: 420px; }
+    .chart-empty { text-align: center; padding: 80px 20px; color: var(--muted); font-size: .9rem; }
+    .chart-empty .icon { font-size: 3rem; margin-bottom: 14px; }
+    .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+    .chart-title { font-size: 1rem; font-weight: 600; }
+    .chart-subtitle { font-size: .78rem; color: var(--muted); margin-top: 2px; }
+    .chart-stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 24px; }
+    .chart-stat { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 18px; text-align: center; }
+    .chart-stat-label { font-size: .7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+    .chart-stat-val { font-size: 1.3rem; font-weight: 700; }
+    @media (max-width: 700px) { .chart-stats { grid-template-columns: 1fr 1fr; } .tab-nav { gap: 2px; } .tab-btn { padding: 5px 10px; font-size: .78rem; } }
+
+    /* Mistakes panel */
+    .mistakes-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px 24px 20px; margin-bottom: 24px; }
+    .mistakes-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+    .mistakes-title { font-size: 1rem; font-weight: 600; }
+    .mistakes-subtitle { font-size: .78rem; color: var(--muted); margin-top: 2px; }
+    .mistakes-count { background: rgba(248,113,113,.15); color: var(--red); font-size: .78rem; font-weight: 700; padding: 3px 12px; border-radius: 20px; border: 1px solid rgba(248,113,113,.3); }
+    .mistakes-list { display: flex; flex-direction: column; gap: 12px; }
+    .mistake-item { background: var(--card); border: 1px solid rgba(248,113,113,.2); border-radius: var(--radius-sm); padding: 14px 16px; transition: border-color .18s; }
+    .mistake-item:hover { border-color: rgba(248,113,113,.45); }
+    .mistake-item-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+    .mistake-item-asset { font-size: .88rem; font-weight: 700; color: var(--text); }
+    .mistake-item-date { font-size: .72rem; color: var(--muted); }
+    .mistake-item-label { font-size: .68rem; font-weight: 600; color: var(--red); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 5px; }
+    .mistake-item-text { font-size: .87rem; color: #f8a0a0; line-height: 1.65; white-space: pre-wrap; }
+    .mistake-item-no-text { font-size: .82rem; color: var(--muted); font-style: italic; }
+    .mistakes-empty { text-align: center; padding: 50px 20px; color: var(--muted); font-size: .9rem; }
+    .mistakes-empty .icon { font-size: 2.5rem; margin-bottom: 12px; }
+
+    /* Sync button */
+    .btn-sync { display: flex; align-items: center; gap: 6px; background: none; border: 1px solid var(--border); color: var(--muted); padding: 6px 12px; border-radius: var(--radius-sm); font-size: .8rem; font-weight: 500; cursor: pointer; transition: all .18s; font-family: inherit; white-space: nowrap; }
+    .btn-sync:hover { border-color: var(--accent); color: var(--accent-h); background: rgba(91,108,249,.07); }
+    .btn-sync .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; transition: background .3s; }
+    .btn-sync .sync-dot.online { background: var(--green); box-shadow: 0 0 6px rgba(52,211,153,.5); }
+    .btn-sync .sync-dot.syncing { background: var(--yellow); animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    /* Reset button */
+    .btn-reset-all { display: flex; align-items: center; gap: 6px; background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.35); color: var(--red); padding: 7px 16px; border-radius: var(--radius-sm); font-size: .82rem; font-weight: 600; cursor: pointer; transition: all .18s; font-family: inherit; white-space: nowrap; }
+    .btn-reset-all:hover { background: rgba(248,113,113,.22); border-color: var(--red); box-shadow: 0 0 14px rgba(248,113,113,.25); }
+
+    /* Sync modal */
+    .sync-modal-overlay { position: fixed; inset: 0; z-index: 400; background: rgba(0,0,0,.75); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 16px; opacity: 0; visibility: hidden; transition: opacity .25s, visibility .25s; }
+    .sync-modal-overlay.open { opacity: 1; visibility: visible; }
+    .sync-modal { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; width: 100%; max-width: 420px; padding: 28px; box-shadow: var(--shadow); transform: scale(.94); transition: transform .25s; }
+    .sync-modal-overlay.open .sync-modal { transform: scale(1); }
+    .sync-modal-title { font-size: 1rem; font-weight: 700; margin-bottom: 6px; }
+    .sync-modal-sub { font-size: .82rem; color: var(--muted); line-height: 1.6; margin-bottom: 22px; }
+    .sync-code-display { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+    .sync-code-val { font-size: 1.4rem; font-weight: 700; letter-spacing: 3px; color: var(--accent-h); font-variant-numeric: tabular-nums; }
+    .btn-copy { background: none; border: 1px solid var(--border); color: var(--muted); padding: 5px 12px; border-radius: 6px; font-size: .78rem; cursor: pointer; transition: all .15s; font-family: inherit; }
+    .btn-copy:hover { border-color: var(--accent); color: var(--accent-h); }
+    .sync-divider { display: flex; align-items: center; gap: 10px; margin: 18px 0; color: var(--muted); font-size: .75rem; }
+    .sync-divider::before, .sync-divider::after { content:''; flex: 1; height: 1px; background: var(--border); }
+    .sync-input-row { display: flex; gap: 8px; }
+    .sync-input-row input { flex: 1; text-transform: uppercase; letter-spacing: 2px; font-size: .95rem; }
+    .btn-connect { background: var(--accent); color: #fff; border: none; padding: 9px 18px; border-radius: var(--radius-sm); font-size: .875rem; font-weight: 500; cursor: pointer; white-space: nowrap; transition: background .18s; font-family: inherit; }
+    .btn-connect:hover { background: var(--accent-h); }
+    .sync-status-row { display: flex; align-items: center; gap: 8px; margin-top: 18px; font-size: .8rem; color: var(--muted); padding-top: 16px; border-top: 1px solid var(--border); }
+    .sync-status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+    .sync-status-dot.online { background: var(--green); }
+    .sync-close-row { display: flex; justify-content: flex-end; margin-top: 16px; }
+    @media (max-width: 480px) { .btn-sync span { display: none; } .btn-sync { padding: 6px 8px; } }
+
+    /* Upload area redesign */
+    .paste-hint-label { font-size: .72rem; color: var(--accent-h); background: rgba(91,108,249,.1); border: 1px solid rgba(91,108,249,.25); border-radius: 20px; padding: 3px 12px; margin-top: 6px; display: inline-block; pointer-events: none; }
+    .file-upload-area { border-color: rgba(91,108,249,.35) !important; }
+    .file-upload-area.drag-over { border-color: var(--accent) !important; background: rgba(91,108,249,.1) !important; transform: scale(1.01); }
+    .btn-pick-file { margin-top: 10px; background: rgba(91,108,249,.15); border: 1px solid rgba(91,108,249,.4); color: var(--accent-h); padding: 6px 18px; border-radius: 20px; font-size: .8rem; cursor: pointer; font-family: inherit; transition: all .15s; }
+    .btn-pick-file:hover { background: rgba(91,108,249,.3); border-color: var(--accent-h); }
+    /* Paste trap — invisible contenteditable intercepts clipboard images */
+    #pasteTrap { position: fixed; top: -9999px; left: -9999px; width: 1px; height: 1px; opacity: 0; pointer-events: none; outline: none; }
+
+    @media (max-width: 700px) {
+      .stats-bar { grid-template-columns: 1fr 1fr; }
+      .stats-bar .stat-card:last-child { grid-column: 1/-1; }
+      .form-row, .form-row-3 { grid-template-columns: 1fr; }
+      .trades-grid { grid-template-columns: 1fr; }
+      main { padding: 20px 16px 60px; }
+      .detail-modal { border-radius: 12px; }
+      .detail-body { padding: 16px 16px 20px; }
+      .detail-meta { grid-template-columns: 1fr 1fr; gap: 8px; }
+      .detail-screenshots { grid-template-columns: 1fr; }
+      .detail-asset { font-size: 1.15rem; }
+    }
+
+    @media (max-width: 480px) {
+      /* Header */
+      .header-inner { height: auto; flex-wrap: wrap; padding: 10px 0; gap: 8px; }
+      .logo { font-size: .9rem; }
+      .tab-btn { padding: 4px 8px; font-size: .75rem; }
+      .btn-add { padding: 7px 12px; font-size: .8rem; }
+      .btn-sync span { display: none; }
+      .btn-sync { padding: 6px 8px; }
+      /* Stats */
+      .stats-bar { grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+      .stat-val { font-size: 1.1rem; }
+      /* Modal */
+      .modal { border-radius: 12px; }
+      .modal-header { padding: 16px 16px 0; }
+      .modal-body { padding: 14px 16px 18px; }
+      .modal-actions { flex-direction: column-reverse; }
+      .btn-save, .btn-cancel { width: 100%; text-align: center; padding: 11px; }
+      /* Detail */
+      .detail-screenshots { padding: 36px 8px 8px; gap: 8px; }
+      .detail-meta { grid-template-columns: 1fr 1fr; }
+      /* Upload areas */
+      .upload-toolbar { flex-direction: column; gap: 6px; align-items: stretch; }
+      .upload-toolbar > div { justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="logo">
+      <div class="logo-icon">📈</div>
+      <span>TradeLog</span>
+    </div>
+    <nav class="tab-nav" role="tablist">
+      <button class="tab-btn active" id="tabBtnJournal" role="tab" aria-selected="true">📋 Журнал</button>
+      <button class="tab-btn" id="tabBtnChart" role="tab" aria-selected="false">📊 График</button>
+    </nav>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button class="btn-sync" id="btnSync" title="Синхронизация между устройствами">
+        <span class="sync-dot" id="syncDot"></span>
+        <span>Синхронизация</span>
+      </button>
+      <button class="btn-add" id="btnOpenModal">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1v14M1 8h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        Добавить сделку
+      </button>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- Журнал -->
+  <div class="tab-page active" id="pageJournal">
+    <div class="stats-bar">
+      <div class="stat-card"><div class="stat-label">Всего сделок</div><div class="stat-val" id="statTotal">0</div></div>
+      <div class="stat-card"><div class="stat-label">Прибыльных</div><div class="stat-val" style="color:var(--green)" id="statWin">0</div></div>
+      <div class="stat-card"><div class="stat-label">Убыточных</div><div class="stat-val" style="color:var(--red)" id="statLoss">0</div></div>
+      <div class="stat-card"><div class="stat-label">Средний RR</div><div class="stat-val" style="color:var(--accent-h)" id="statRR">—</div></div>
+      <div class="stat-card"><div class="stat-label">Ср. риск %</div><div class="stat-val" style="color:var(--yellow)" id="statRisk">—</div></div>
+    </div>
+    <div class="section-title">Все сделки</div>
+    <div class="trades-grid" id="tradesGrid"></div>
+  </div>
+
+  <!-- График -->
+  <div class="tab-page chart-page" id="pageChart">
+    <div class="chart-stats">
+      <div class="chart-stat"><div class="chart-stat-label">Начальный баланс</div><div class="chart-stat-val" id="chartStatStart" style="color:var(--muted)">—</div></div>
+      <div class="chart-stat"><div class="chart-stat-label">Текущий баланс</div><div class="chart-stat-val" id="chartStatCurrent" style="color:var(--accent-h)">—</div></div>
+      <div class="chart-stat"><div class="chart-stat-label">Изменение</div><div class="chart-stat-val" id="chartStatDelta">—</div></div>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-header">
+        <div>
+          <div class="chart-title">Кривая баланса</div>
+          <div class="chart-subtitle">Динамика изменения баланса по сделкам</div>
+        </div>
+      </div>
+      <div id="chartEmpty" class="chart-empty" style="display:none">
+        <div class="icon">📉</div>
+        <p>Нет данных для построения графика.<br/>Добавьте сделку с указанием баланса.</p>
+      </div>
+      <canvas id="balanceChart"></canvas>
+    </div>
+
+    <!-- Мои минусы -->
+    <div class="mistakes-wrap">
+      <div class="mistakes-header">
+        <div>
+          <div class="mistakes-title">⚠️ Мои минусы</div>
+          <div class="mistakes-subtitle">Все убыточные сделки и разбор ошибок</div>
+        </div>
+        <span class="mistakes-count" id="mistakesCount">0 убытков</span>
+      </div>
+      <div class="mistakes-list" id="mistakesList"></div>
+    </div>
+  </div>
+
+</main>
+
+<!-- Add Modal -->
+<div class="overlay" id="overlay" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modalTitle">Новая сделка</span>
+      <button class="btn-close" id="btnClose" aria-label="Закрыть">&#x2715;</button>
+    </div>
+    <div class="modal-body">
+      <form id="tradeForm" novalidate>
+
+        <div class="form-section">
+          <div class="form-section-title">📅 Дата и время</div>
+          <div class="form-row">
+            <div class="form-group"><label for="fieldDate">Дата</label><input type="date" id="fieldDate" required /></div>
+            <div class="form-group"><label for="fieldTime">Время входа</label><input type="time" id="fieldTime" required /></div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="form-section-title">⚙️ Параметры сделки</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="fieldAsset">Актив</label>
+              <input type="text" id="fieldAsset" placeholder="BTC/USDT, AAPL, EURUSD..." value="BTC/USDT" required />
+            </div>
+            <div class="form-group">
+              <label for="fieldTimeframe">Таймфрейм</label>
+              <select id="fieldTimeframe">
+                <option value="">Выберите...</option>
+                <option value="M1" selected>M1 (1 минута)</option>
+                <option value="M5">M5 (5 минут)</option>
+                <option value="M15">M15 (15 минут)</option>
+                <option value="M30">M30 (30 минут)</option>
+                <option value="H1">H1 (1 час)</option>
+                <option value="H4">H4 (4 часа)</option>
+                <option value="D1">D1 (1 день)</option>
+                <option value="W1">W1 (1 неделя)</option>
+                <option value="MN">MN (1 месяц)</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row-3">
+            <div class="form-group">
+              <label for="fieldDirection">Направление</label>
+              <select id="fieldDirection" required>
+                <option value="" disabled selected>Выберите...</option>
+                <option value="long">📈 Long (Покупка)</option>
+                <option value="short">📉 Short (Продажа)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="fieldRR">RR (риск:реворд)</label>
+              <input type="text" id="fieldRR" placeholder="1:2, 1:3..." />
+            </div>
+            <div class="form-group">
+              <label for="fieldRiskPct">Риск %</label>
+              <input type="number" id="fieldRiskPct" placeholder="1.5" min="0" max="100" step="0.1" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="fieldRisk">Уровень риска</label>
+              <select id="fieldRisk">
+                <option value="">Выберите...</option>
+                <option value="low">Низкий</option>
+                <option value="medium" selected>Средний</option>
+                <option value="high">Высокий</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="fieldResult">Итог сделки</label>
+              <select id="fieldResult">
+                <option value="">Выберите...</option>
+                <option value="profit">✅ Прибыль (+)</option>
+                <option value="loss" selected>❌ Убыток (−)</option>
+                <option value="breakeven">➖ Безубыток</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="fieldProfitAmt">💰 Профит $ (при прибыли)</label>
+              <input type="number" id="fieldProfitAmt" placeholder="3" value="3" min="0" step="0.01" />
+            </div>
+            <div class="form-group">
+              <label for="fieldRiskAmt">⚡ Риск $ (при убытке)</label>
+              <input type="number" id="fieldRiskAmt" placeholder="1" value="1" min="0" step="0.01" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="fieldBalBefore">Баланс до сделки</label>
+              <input type="number" id="fieldBalBefore" placeholder="100" min="0" step="0.01" style="background:rgba(91,108,249,.07);border-color:rgba(91,108,249,.35)" readonly />
+            </div>
+            <div class="form-group">
+              <label for="fieldBalAfter">Баланс после сделки</label>
+              <input type="number" id="fieldBalAfter" placeholder="103" min="0" step="0.01" style="background:rgba(91,108,249,.07);border-color:rgba(91,108,249,.35)" readonly />
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="form-section-title">🖼️ Скриншот до входа</div>
+          <div class="upload-full">
+            <div class="file-upload-area" id="uploadAreaBefore" tabindex="0">
+              <div class="upload-placeholder" id="uploadPlaceholderBefore">
+                <div class="file-upload-icon">📁</div>
+                <div class="file-upload-text">Кликните, перетащите или нажмите Ctrl+V</div>
+                <span class="paste-hint-label active-hint">📋 Ctrl+V — вставить из буфера</span>
+                <button type="button" class="btn-pick-file" id="btnPickBefore">Выбрать файл</button>
+              </div>
+              <div class="upload-img-wrap" id="imgWrapBefore" style="display:none">
+                <img class="preview-thumb-large active" id="previewThumbBefore" alt="До входа" />
+              </div>
+              <input type="file" id="fieldFileBefore" accept="image/*" style="display:none" />
+            </div>
+            <div class="upload-toolbar" id="toolbarBefore">
+              <div style="display:flex;gap:6px;align-items:center">
+                <button type="button" class="btn-zoom-out" id="zoomOutBefore">− Уменьшить</button>
+                <span class="img-scale-info" id="scaleInfoBefore">100%</span>
+                <button type="button" class="btn-zoom-in" id="zoomInBefore">+ Увеличить</button>
+              </div>
+              <div style="display:flex;gap:6px">
+                <button type="button" class="btn-zoom-in" id="fitBefore">↔ По ширине</button>
+                <button type="button" class="btn-clear-img" id="clearBefore">✕ Удалить</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="form-section-title">🧠 Анализ входа</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="fieldReason">Почему вошёл (причина входа)</label>
+              <textarea id="fieldReason" placeholder="Укажите паттерн, уровень, сигнал, стратегию..."></textarea>
+            </div>
+            <div class="form-group">
+              <label for="fieldEmotions">Эмоции во время сделки</label>
+              <textarea id="fieldEmotions" placeholder="Страх, жадность, уверенность, FOMO, спокойствие..." style="min-height:76px">Спокойствие, уверенность в сигнале, нет страха</textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="form-section-title">📊 Скриншот после сделки</div>
+          <div class="upload-full">
+            <div class="file-upload-area" id="uploadAreaAfter" tabindex="0">
+              <div class="upload-placeholder" id="uploadPlaceholderAfter">
+                <div class="file-upload-icon">📁</div>
+                <div class="file-upload-text">Кликните, перетащите или нажмите Ctrl+V</div>
+                <span class="paste-hint-label active-hint">📋 Ctrl+V — вставить из буфера</span>
+                <button type="button" class="btn-pick-file" id="btnPickAfter">Выбрать файл</button>
+              </div>
+              <div class="upload-img-wrap" id="imgWrapAfter" style="display:none">
+                <img class="preview-thumb-large active" id="previewThumbAfter" alt="После сделки" />
+              </div>
+              <input type="file" id="fieldFileAfter" accept="image/*" style="display:none" />
+            </div>
+            <div class="upload-toolbar" id="toolbarAfter">
+              <div style="display:flex;gap:6px;align-items:center">
+                <button type="button" class="btn-zoom-out" id="zoomOutAfter">− Уменьшить</button>
+                <span class="img-scale-info" id="scaleInfoAfter">100%</span>
+                <button type="button" class="btn-zoom-in" id="zoomInAfter">+ Увеличить</button>
+              </div>
+              <div style="display:flex;gap:6px">
+                <button type="button" class="btn-zoom-in" id="fitAfter">↔ По ширине</button>
+                <button type="button" class="btn-clear-img" id="clearAfter">✕ Удалить</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Поле «Моя ошибка» — только при убытке -->
+        <div class="form-section mistake-section" id="mistakeSection">
+          <div class="form-section-title">⚠️ Моя ошибка</div>
+          <div class="form-group">
+            <label for="fieldMistake">Что пошло не так? Как избежать в будущем?</label>
+            <textarea id="fieldMistake" placeholder="Опишите свою ошибку и урок..."></textarea>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-cancel" id="btnCancel">Отмена</button>
+          <button type="submit" class="btn-save">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Detail Modal -->
+<div class="detail-overlay" id="detailOverlay" role="dialog" aria-modal="true" aria-label="Детали сделки">
+  <div class="detail-modal" id="detailModal">
+    <div class="detail-img-wrap">
+      <button class="detail-close" id="detailClose" aria-label="Закрыть">&#x2715;</button>
+      <div class="detail-screenshots" id="detailScreenshots"></div>
+    </div>
+    <div class="detail-body">
+      <div class="detail-top">
+        <div class="detail-asset" id="detailAsset"></div>
+        <div class="detail-top-badges" id="detailBadges"></div>
+      </div>
+      <div class="detail-meta" id="detailMeta"></div>
+      <div class="detail-section">
+        <div class="detail-section-title">🧠 Почему вошёл</div>
+        <div id="detailReason"></div>
+      </div>
+      <div class="detail-section">
+        <div class="detail-section-title">💭 Эмоции</div>
+        <div class="detail-emotions-block" id="detailEmotions"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Photo Lightbox -->
+<div class="photo-lb" id="photoLb" role="dialog" aria-modal="true" aria-label="Просмотр фото">
+  <div class="plb-topbar">
+    <div class="plb-tabs">
+      <button class="plb-tab" id="plbTabBefore">🖼️ До входа</button>
+      <button class="plb-tab" id="plbTabAfter">📊 После сделки</button>
+    </div>
+    <div class="plb-controls">
+      <button class="plb-ctrl-btn" id="plbZoomOut" title="Уменьшить (−)">−</button>
+      <span class="plb-scale-badge" id="plbScaleBadge">100%</span>
+      <button class="plb-ctrl-btn" id="plbZoomIn" title="Увеличить (+)">+</button>
+      <button class="plb-ctrl-btn" id="plbZoomFit" title="По экрану (0)" style="font-size:.7rem;width:auto;padding:0 10px">⊡ Fit</button>
+      <button class="plb-ctrl-btn" id="plbZoom100" title="100% (1)" style="font-size:.7rem;width:auto;padding:0 10px">1:1</button>
+      <button class="plb-close-btn" id="plbClose">✕ Закрыть</button>
+    </div>
+  </div>
+  <div class="plb-canvas" id="plbCanvas">
+    <div class="plb-img-wrap" id="plbImgWrap">
+      <img id="plbImg" src="" alt="Скриншот" />
+    </div>
+  </div>
+  <div class="plb-hint">Колёсико мыши — зум&nbsp;&nbsp;·&nbsp;&nbsp;Перетащите — панорама&nbsp;&nbsp;·&nbsp;&nbsp;+/− — зум&nbsp;&nbsp;·&nbsp;&nbsp;0 — вписать&nbsp;&nbsp;·&nbsp;&nbsp;1 — 100%&nbsp;&nbsp;·&nbsp;&nbsp;Esc — закрыть</div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast" role="status" aria-live="polite"><span id="toastMsg">Сделка сохранена!</span></div>
+
+<!-- Paste trap: invisible contenteditable div to reliably capture image paste on file:// -->
+<div id="pasteTrap" contenteditable="true" tabindex="-1" aria-hidden="true"></div>
+
+<script>
+  /* ─── STORAGE ─────────────────────────────────── */
+  const STORAGE_KEY = 'tradelog_v2';
+  const getTrades = () => JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+  const saveTrades = t => {
+    // Сохраняем только метаданные (без base64 картинок)
+    const meta = t.map(x => { const c = {...x}; delete c.imageBefore; delete c.imageAfter; return c; });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(meta));
+  };
+
+  /* ─── IndexedDB для изображений ─────────────────── */
+  let idb = null;
+  function openIDB() {
+    return new Promise((res, rej) => {
+      if (idb) { res(idb); return; }
+      const req = indexedDB.open('tradelog_images', 1);
+      req.onupgradeneeded = e => { e.target.result.createObjectStore('images'); };
+      req.onsuccess = e => { idb = e.target.result; res(idb); };
+      req.onerror = e => rej(e);
+    });
+  }
+  async function saveImages(tradeId, before, after) {
+    const db = await openIDB();
+    const tx = db.transaction('images', 'readwrite');
+    const st = tx.objectStore('images');
+    if (before) st.put(before, tradeId + '_before');
+    else st.delete(tradeId + '_before');
+    if (after) st.put(after, tradeId + '_after');
+    else st.delete(tradeId + '_after');
+    return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
+  }
+  async function loadImages(tradeId) {
+    const db = await openIDB();
+    const tx = db.transaction('images', 'readonly');
+    const st = tx.objectStore('images');
+    function get(key) { return new Promise(res => { const r = st.get(key); r.onsuccess = () => res(r.result || null); r.onerror = () => res(null); }); }
+    const [before, after] = await Promise.all([get(tradeId + '_before'), get(tradeId + '_after')]);
+    return { before, after };
+  }
+  async function deleteImages(tradeId) {
+    const db = await openIDB();
+    const tx = db.transaction('images', 'readwrite');
+    const st = tx.objectStore('images');
+    st.delete(tradeId + '_before');
+    st.delete(tradeId + '_after');
+    return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
+  }
+
+  /* ─── DOM ─────────────────────────────────────── */
+  const $ = id => document.getElementById(id);
+  const overlay=$('overlay'), btnOpen=$('btnOpenModal'), btnClose=$('btnClose'), btnCancel=$('btnCancel');
+  const tradeForm=$('tradeForm'), fieldDate=$('fieldDate'), fieldTime=$('fieldTime');
+  const fieldAsset=$('fieldAsset'), fieldTimeframe=$('fieldTimeframe'), fieldDirection=$('fieldDirection');
+  const fieldRR=$('fieldRR'), fieldRiskPct=$('fieldRiskPct'), fieldRisk=$('fieldRisk'), fieldResult=$('fieldResult');
+  const fieldReason=$('fieldReason'), fieldEmotions=$('fieldEmotions'), fieldMistake=$('fieldMistake');
+  const fieldBalBefore=$('fieldBalBefore'), fieldBalAfter=$('fieldBalAfter');
+  const uploadAreaBefore=$('uploadAreaBefore'), fieldFileBefore=$('fieldFileBefore');
+  const uploadPlaceholderBefore=$('uploadPlaceholderBefore'), imgWrapBefore=$('imgWrapBefore');
+  const previewThumbBefore=$('previewThumbBefore'), toolbarBefore=$('toolbarBefore');
+  const uploadAreaAfter=$('uploadAreaAfter'), fieldFileAfter=$('fieldFileAfter');
+  const uploadPlaceholderAfter=$('uploadPlaceholderAfter'), imgWrapAfter=$('imgWrapAfter');
+  const previewThumbAfter=$('previewThumbAfter'), toolbarAfter=$('toolbarAfter');
+  const tradesGrid=$('tradesGrid'), toast=$('toast'), toastMsg=$('toastMsg');
+  const statTotal=$('statTotal'), statWin=$('statWin'), statLoss=$('statLoss'), statRR=$('statRR'), statRisk=$('statRisk');
+  const detailOverlay=$('detailOverlay'), detailClose=$('detailClose');
+  const detailAsset=$('detailAsset'), detailBadges=$('detailBadges'), detailMeta=$('detailMeta');
+  const detailReason=$('detailReason'), detailEmotions=$('detailEmotions'), detailScreenshots=$('detailScreenshots');
+
+  let b64Before = null, b64After = null;
+  let scaleBefore = 1, scaleAfter = 1;
+  let lastFocusedUpload = 'before'; // активная зона для вставки Ctrl+V
+
+  /* ─── MODAL ───────────────────────────────────── */
+  function openModal() {
+    setDefaultDateTime();
+    overlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    // По умолчанию Ctrl+V вставит в первую область (До входа)
+    lastFocusedUpload = 'before';
+    uploadAreaBefore.classList.add('paste-target');
+    uploadAreaAfter.classList.remove('paste-target');
+  }
+  function closeModal() {
+    overlay.classList.remove('open'); document.body.style.overflow = '';
+    tradeForm.reset(); clearImg('before'); clearImg('after');
+    // Скрываем блок ошибки
+    $('mistakeSection').classList.remove('visible');
+    uploadAreaBefore.classList.remove('paste-target');
+    uploadAreaAfter.classList.remove('paste-target');
+  }
+  function clearImg(w) {
+    if (w === 'before') {
+      b64Before=null; scaleBefore=1;
+      previewThumbBefore.src=''; imgWrapBefore.style.display='none';
+      uploadPlaceholderBefore.style.display='';
+      toolbarBefore.classList.remove('active');
+      uploadAreaBefore.classList.remove('has-image');
+      previewThumbBefore.style.transform='scale(1)';
+      $('scaleInfoBefore').textContent='100%';
+    } else {
+      b64After=null; scaleAfter=1;
+      previewThumbAfter.src=''; imgWrapAfter.style.display='none';
+      uploadPlaceholderAfter.style.display='';
+      toolbarAfter.classList.remove('active');
+      uploadAreaAfter.classList.remove('has-image');
+      previewThumbAfter.style.transform='scale(1)';
+      $('scaleInfoAfter').textContent='100%';
+    }
+  }
+  btnOpen.addEventListener('click', openModal);
+  btnClose.addEventListener('click', closeModal);
+  btnCancel.addEventListener('click', closeModal);
+  // Клик вне модала НЕ закрывает его — только кнопки «Отмена» и «✕»
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      if ($('photoLb').classList.contains('open')) { closePhotoLb(); return; }
+      closeDetail(); closeLightbox();
+    }
+  });
+
+  /* ─── НАЧАЛЬНЫЙ БАЛАНС ──────────────────────────── */
+  const INITIAL_BALANCE_KEY = 'tradelog_initial_balance';
+  function getInitialBalance() {
+    const v = parseFloat(localStorage.getItem(INITIAL_BALANCE_KEY));
+    return isNaN(v) ? 100 : v;
+  }
+
+  /* Получить текущий баланс (balAfter последней по времени сделки или начальный) */
+  function getCurrentBalance() {
+    const trades = getTrades();
+    // Сделки хранятся unshift — т.е. первая в массиве = самая новая
+    // Ищем самую последнюю, у которой есть balAfter
+    const last = trades.find(t => t.balAfter != null);
+    return last ? last.balAfter : getInitialBalance();
+  }
+
+  /* Пересчитать balAfter в форме */
+  function recalcBalAfter() {
+    const before = parseFloat(fieldBalBefore.value);
+    if (isNaN(before)) return;
+    const result = fieldResult.value;
+    const profitAmt = parseFloat($('fieldProfitAmt').value) || 3;
+    const riskAmt   = parseFloat($('fieldRiskAmt').value)  || 1;
+    if (result === 'profit') {
+      fieldBalAfter.value = (before + profitAmt).toFixed(2);
+    } else if (result === 'loss') {
+      fieldBalAfter.value = Math.max(0, before - riskAmt).toFixed(2);
+    } else if (result === 'breakeven') {
+      fieldBalAfter.value = before.toFixed(2);
+    } else {
+      fieldBalAfter.value = '';
+    }
+  }
+
+  // Показываем / скрываем поле «Моя ошибка» в зависимости от итога
+  fieldResult.addEventListener('change', () => {
+    const ms = $('mistakeSection');
+    if (fieldResult.value === 'loss') {
+      ms.classList.add('visible');
+      // Убыток — RR не меняем, просто пересчитываем баланс
+    } else {
+      ms.classList.remove('visible');
+      fieldMistake.value = '';
+      // Прибыль — авто-заполнить RR 1:3
+      if (fieldResult.value === 'profit') {
+        fieldRR.value = '1:3';
+      }
+    }
+    recalcBalAfter();
+  });
+
+  // Пересчёт при изменении суммы профита/риска
+  $('fieldProfitAmt').addEventListener('input', recalcBalAfter);
+  $('fieldRiskAmt').addEventListener('input', recalcBalAfter);
+
+  function setDefaultDateTime() {
+    const now = new Date(), pad = n => String(n).padStart(2,'0');
+    fieldDate.value = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+    fieldTime.value = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    fieldAsset.value        = 'BTC/USDT';
+    fieldTimeframe.value    = 'M1';
+    fieldRR.value           = '1:3';
+    fieldRiskPct.value      = '1';
+    fieldRisk.value         = 'medium';
+    fieldResult.value       = 'loss';
+    fieldEmotions.value     = 'Спокойствие, уверенность в сигнале, нет страха';
+    // Авто-заполняем баланс до сделки = текущий баланс
+    const curBal = getCurrentBalance();
+    fieldBalBefore.value = curBal.toFixed(2);
+    // По умолчанию выбран «Убыток»
+    $('mistakeSection').classList.add('visible');
+    fieldMistake.value = '';
+    recalcBalAfter();
+  }
+
+  /* ─── IMAGE ───────────────────────────────────── */
+  function applyImg(w, url, name) {
+    if (w === 'before') {
+      b64Before=url; scaleBefore=1;
+      previewThumbBefore.src=url;
+      imgWrapBefore.style.display='block';
+      uploadPlaceholderBefore.style.display='none';
+      toolbarBefore.classList.add('active');
+      uploadAreaBefore.classList.add('has-image');
+      previewThumbBefore.style.transform='scale(1)';
+      $('scaleInfoBefore').textContent='100%';
+    } else {
+      b64After=url; scaleAfter=1;
+      previewThumbAfter.src=url;
+      imgWrapAfter.style.display='block';
+      uploadPlaceholderAfter.style.display='none';
+      toolbarAfter.classList.add('active');
+      uploadAreaAfter.classList.add('has-image');
+      previewThumbAfter.style.transform='scale(1)';
+      $('scaleInfoAfter').textContent='100%';
+    }
+  }
+  function readFile(f) { return new Promise(r => { const fr=new FileReader(); fr.onload=e=>r(e.target.result); fr.readAsDataURL(f); }); }
+
+  /* Сжатие изображений перед сохранением (макс 1400px, quality 0.72) */
+  function compressImage(dataUrl) {
+    return new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1400;
+        let w = img.width, h = img.height;
+        if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.72));
+      };
+      img.src = dataUrl;
+    });
+  }
+
+  /* Zoom helpers */
+  function setScale(w, delta) {
+    if (w === 'before') {
+      scaleBefore = Math.min(5, Math.max(0.3, scaleBefore + delta));
+      previewThumbBefore.style.transform = `scale(${scaleBefore})`;
+      previewThumbBefore.style.transformOrigin = 'top left';
+      $('scaleInfoBefore').textContent = Math.round(scaleBefore*100)+'%';
+    } else {
+      scaleAfter = Math.min(5, Math.max(0.3, scaleAfter + delta));
+      previewThumbAfter.style.transform = `scale(${scaleAfter})`;
+      previewThumbAfter.style.transformOrigin = 'top left';
+      $('scaleInfoAfter').textContent = Math.round(scaleAfter*100)+'%';
+    }
+  }
+  function fitWidth(w) {
+    const img = w==='before' ? previewThumbBefore : previewThumbAfter;
+    const wrap = w==='before' ? imgWrapBefore : imgWrapAfter;
+    const ratio = wrap.clientWidth / img.naturalWidth;
+    if (w==='before') {
+      scaleBefore=ratio; previewThumbBefore.style.transform=`scale(${ratio})`;
+      previewThumbBefore.style.transformOrigin='top left';
+      $('scaleInfoBefore').textContent=Math.round(ratio*100)+'%';
+    } else {
+      scaleAfter=ratio; previewThumbAfter.style.transform=`scale(${ratio})`;
+      previewThumbAfter.style.transformOrigin='top left';
+      $('scaleInfoAfter').textContent=Math.round(ratio*100)+'%';
+    }
+  }
+
+  $('zoomInBefore').addEventListener('click',  e => { e.stopPropagation(); setScale('before', 0.25); });
+  $('zoomOutBefore').addEventListener('click', e => { e.stopPropagation(); setScale('before',-0.25); });
+  $('fitBefore').addEventListener('click',     e => { e.stopPropagation(); fitWidth('before'); });
+  $('clearBefore').addEventListener('click',   e => { e.stopPropagation(); clearImg('before'); });
+  $('zoomInAfter').addEventListener('click',   e => { e.stopPropagation(); setScale('after', 0.25); });
+  $('zoomOutAfter').addEventListener('click',  e => { e.stopPropagation(); setScale('after',-0.25); });
+  $('fitAfter').addEventListener('click',      e => { e.stopPropagation(); fitWidth('after'); });
+  $('clearAfter').addEventListener('click',    e => { e.stopPropagation(); clearImg('after'); });
+
+  /* ─── LIGHTBOX stub (replaced by photoLb) ─── */
+  function openLightbox() {}
+  function closeLightbox() {}
+
+  /* ─── FILE INPUT via buttons ──────────────────────────── */
+  $('btnPickBefore').addEventListener('click', e => { e.stopPropagation(); fieldFileBefore.click(); });
+  $('btnPickAfter').addEventListener('click',  e => { e.stopPropagation(); fieldFileAfter.click(); });
+  fieldFileBefore.addEventListener('change', async () => { const f = fieldFileBefore.files[0]; if (f) applyImg('before', await compressImage(await readFile(f)), f.name); });
+  fieldFileAfter.addEventListener('change',  async () => { const f = fieldFileAfter.files[0];  if (f) applyImg('after',  await compressImage(await readFile(f)), f.name); });
+
+  /* ─── DRAG & DROP ────────────────────────────────────── */
+  function setupDrop(area, w) {
+    area.addEventListener('dragover',  e => { e.preventDefault(); e.stopPropagation(); area.classList.add('drag-over'); });
+    area.addEventListener('dragleave', e => { if (!area.contains(e.relatedTarget)) area.classList.remove('drag-over'); });
+    area.addEventListener('drop', async e => {
+      e.preventDefault(); e.stopPropagation();
+      area.classList.remove('drag-over');
+      lastFocusedUpload = w;
+      const f = e.dataTransfer.files[0];
+      if (f && f.type.startsWith('image/')) {
+        applyImg(w, await compressImage(await readFile(f)), f.name);
+        showToast('📁 Изображение загружено!', true);
+      }
+    });
+    // Клик по пластинке (не по btn-pick-file) открывает файловый диалог
+    area.addEventListener('click', e => {
+      if (e.target.classList.contains('btn-pick-file')) return;
+      if (area.classList.contains('has-image')) return;
+      lastFocusedUpload = w;
+      (w === 'before' ? fieldFileBefore : fieldFileAfter).click();
+    });
+    // Наведение = цель для Ctrl+V
+    area.addEventListener('mouseenter', () => { lastFocusedUpload = w; });
+  }
+  setupDrop(uploadAreaBefore, 'before');
+  setupDrop(uploadAreaAfter, 'after');
+
+  /* ─── CTRL+V PASTE ───────────────────────────────────────── */
+  const pasteTrap = $('pasteTrap');
+
+  // Ctrl+V → фокус на ловушку → браузер передаёт изображение через paste
+  document.addEventListener('keydown', e => {
+    if (!overlay.classList.contains('open')) return;
+    if (!((e.ctrlKey || e.metaKey) && e.key === 'v')) return;
+    const prev = document.activeElement;
+    pasteTrap._prev = prev;
+    pasteTrap.focus();
+    setTimeout(() => { try { if (pasteTrap._prev && pasteTrap._prev !== pasteTrap) pasteTrap._prev.focus(); } catch(_){} }, 80);
+  }, true);
+
+  pasteTrap.addEventListener('paste', async e => {
+    e.preventDefault();
+    pasteTrap.innerHTML = '';
+    const items = Array.from((e.clipboardData || window.clipboardData || {items:[]}).items);
+    await handlePasteImg(items);
+  });
+
+  // Запасной: если paste пришёл не на ловушку (напр. фокус уже был на upload-zone)
+  document.addEventListener('paste', async e => {
+    if (!overlay.classList.contains('open')) return;
+    if (e.target === pasteTrap) return;
+    const items = Array.from((e.clipboardData || window.clipboardData || {items:[]}).items);
+    const hasImage = items.some(i => i.type && i.type.startsWith('image/'));
+    if (!hasImage) return;
+    e.preventDefault(); e.stopPropagation();
+    await handlePasteImg(items);
+  }, true);
+
+  async function handlePasteImg(items) {
+    for (const item of items) {
+      if (item.type && item.type.startsWith('image/')) {
+        const target = lastFocusedUpload || 'before';
+        const f = item.getAsFile ? item.getAsFile() : null;
+        if (!f) continue;
+        applyImg(target, await compressImage(await readFile(f)), 'скриншот');
+        showToast('📋 Вставлено в «' + (target === 'before' ? 'До входа' : 'После сделки') + '»!', true);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /* ─── SUBMIT ──────────────────────────────────── */
+
+  tradeForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    if (!fieldDate.value || !fieldTime.value || !fieldAsset.value.trim() || !fieldDirection.value) { showToast('Заполните обязательные поля', false); return; }
+    const profitAmt = parseFloat($('fieldProfitAmt').value) || 3;
+    const riskAmt   = parseFloat($('fieldRiskAmt').value)  || 1;
+    const trade = {
+      id: Date.now(),
+      date: fieldDate.value,
+      time: fieldTime.value,
+      asset: fieldAsset.value.trim(),
+      timeframe: fieldTimeframe.value,
+      direction: fieldDirection.value,
+      rr: fieldRR.value.trim(),
+      riskPct: fieldRiskPct.value,
+      risk: fieldRisk.value,
+      result: fieldResult.value,
+      reason: fieldReason.value.trim(),
+      emotions: fieldEmotions.value.trim(),
+      mistake: fieldMistake.value.trim(),
+      profitAmt,
+      riskAmt,
+      balBefore: fieldBalBefore.value ? parseFloat(fieldBalBefore.value) : null,
+      balAfter:  fieldBalAfter.value  ? parseFloat(fieldBalAfter.value)  : null
+    };
+    // Сохраняем изображения в IndexedDB
+    await saveImages(trade.id, b64Before, b64After);
+    const trades = getTrades(); trades.unshift(trade);
+    saveTrades(trades);
+    closeModal(); renderAll(); updateChart(); pushToFirebase(trades); showToast('Сделка сохранена!', true);
+  });
+
+  /* ─── LABELS ──────────────────────────────────── */
+  const riskLabel = { low:'Низкий', medium:'Средний', high:'Высокий' };
+  const riskClass = { low:'risk-low', medium:'risk-medium', high:'risk-high' };
+  const dirLabel  = { long:'📈 Long', short:'📉 Short' };
+  const dirClass  = { long:'dir-long', short:'dir-short' };
+  const resLabel  = { profit:'✅ Прибыль', loss:'❌ Убыток', breakeven:'➖ Безубыток' };
+  const resClass  = { profit:'result-pos', loss:'result-neg', breakeven:'risk-medium' };
+
+  /* ─── DETAIL ──────────────────────────────────── */
+  let _detailImgs = { before: null, after: null }; // для лайтбокса
+
+  async function openDetail(trade) {
+    detailScreenshots.innerHTML = '';
+    // Загружаем картинки из IndexedDB
+    const imgs = await loadImages(trade.id);
+    _detailImgs = imgs;
+
+    function makeBlock(src, label, which) {
+      const b=document.createElement('div'); b.className='detail-screenshot-block';
+      const l=document.createElement('div'); l.className='detail-screenshot-label'; l.textContent=label; b.appendChild(l);
+      if (src) {
+        const img=document.createElement('img');
+        img.className='detail-img'; img.src=src; img.alt=label;
+        img.title='Нажмите для просмотра';
+        img.addEventListener('click', () => openPhotoLb(which));
+        b.appendChild(img);
+      } else {
+        const ph=document.createElement('div'); ph.className='detail-img-none'; ph.textContent='📷'; b.appendChild(ph);
+      }
+      return b;
+    }
+    detailScreenshots.appendChild(makeBlock(imgs.before, 'До входа', 'before'));
+    detailScreenshots.appendChild(makeBlock(imgs.after, 'После сделки', 'after'));
+
+    detailAsset.textContent = trade.asset + (trade.timeframe ? ' · ' + trade.timeframe : '');
+    detailBadges.innerHTML = '';
+    if (trade.direction) { const s=document.createElement('span'); s.className='direction-tag '+(dirClass[trade.direction]||''); s.textContent=dirLabel[trade.direction]||trade.direction; detailBadges.appendChild(s); }
+    if (trade.risk) { const s=document.createElement('span'); s.className='risk-badge '+(riskClass[trade.risk]||''); s.textContent=riskLabel[trade.risk]||trade.risk; detailBadges.appendChild(s); }
+    if (trade.result) { const s=document.createElement('span'); s.className='result-badge '+(resClass[trade.result]||''); s.textContent=resLabel[trade.result]||trade.result; detailBadges.appendChild(s); }
+
+    detailMeta.innerHTML = '';
+    [{label:'Дата',val:fmtDate(trade.date)},{label:'Время',val:trade.time},{label:'RR',val:trade.rr||'—'},{label:'Риск %',val:trade.riskPct?trade.riskPct+'%':'—'}].forEach(m => {
+      const el=document.createElement('div'); el.className='detail-meta-item';
+      el.innerHTML='<div class="detail-meta-label">'+m.label+'</div><div class="detail-meta-val">'+esc(String(m.val))+'</div>';
+      detailMeta.appendChild(el);
+    });
+    detailReason.innerHTML = trade.reason ? '<p class="detail-desc">'+esc(trade.reason)+'</p>' : '<p class="detail-nodesc">Причина не указана</p>';
+    detailEmotions.innerHTML = trade.emotions ? esc(trade.emotions) : '<em style="color:var(--muted)">Эмоции не указаны</em>';
+    // Блок ошибки — только для убыточных сделок
+    const detailMistakeSec = document.getElementById('detailMistakeSec');
+    if (detailMistakeSec) detailMistakeSec.remove();
+    if (trade.result === 'loss' && trade.mistake) {
+      const sec = document.createElement('div');
+      sec.className = 'detail-section'; sec.id = 'detailMistakeSec';
+      sec.innerHTML = '<div class="detail-section-title" style="color:var(--red)">⚠️ Моя ошибка</div><div class="detail-mistake-block">'+esc(trade.mistake)+'</div>';
+      document.getElementById('detailEmotions').closest('.detail-section').after(sec);
+    }
+    detailOverlay.classList.add('open'); document.body.style.overflow = 'hidden';
+  }
+  function closeDetail() { detailOverlay.classList.remove('open'); if(!overlay.classList.contains('open')) document.body.style.overflow=''; }
+  detailClose.addEventListener('click', closeDetail);
+  // Клик вне детального окна НЕ закрывает его — только кнопка «✕»
+
+  /* ─── PHOTO LIGHTBOX ───────────────────────────── */
+  (function() {
+    const lb        = $('photoLb');
+    const canvas    = $('plbCanvas');
+    const imgWrap   = $('plbImgWrap');
+    const img       = $('plbImg');
+    const badge     = $('plbScaleBadge');
+    const tabBefore = $('plbTabBefore');
+    const tabAfter  = $('plbTabAfter');
+
+    let scale = 1, offX = 0, offY = 0;
+    let currentWhich = 'before';
+    let imgSrcs = { before: null, after: null };
+
+    // Анимация трансформации
+    function applyTransform(animate) {
+      imgWrap.style.transition = animate ? 'transform .25s cubic-bezier(.25,.8,.25,1)' : 'none';
+      imgWrap.style.transform = `translate(calc(-50% + ${offX}px), calc(-50% + ${offY}px)) scale(${scale})`;
+      badge.textContent = Math.round(scale * 100) + '%';
+    }
+
+    // Установить масштаб "fit" — вписывает в экран
+    function fitScale() {
+      const cw = canvas.clientWidth  - 40;
+      const ch = canvas.clientHeight - 40;
+      const iw = img.naturalWidth  || img.clientWidth  || 1;
+      const ih = img.naturalHeight || img.clientHeight || 1;
+      return Math.min(1, Math.min(cw / iw, ch / ih));
+    }
+
+    function resetView(animate) {
+      scale = fitScale();
+      offX = 0; offY = 0;
+      applyTransform(animate);
+    }
+
+    function zoom(delta, cx, cy) {
+      // cx, cy — центр зума относительно канваса
+      const minS = 0.1, maxS = 10;
+      const newScale = Math.min(maxS, Math.max(minS, scale * (1 + delta)));
+      if (cx !== undefined) {
+        const r = newScale / scale;
+        offX = cx + (offX - cx) * r;
+        offY = cy + (offY - cy) * r;
+      }
+      scale = newScale;
+      applyTransform(false);
+    }
+
+    function switchPhoto(which) {
+      const src = imgSrcs[which];
+      if (!src) return;
+      currentWhich = which;
+      img.src = src;
+      tabBefore.classList.toggle('active', which === 'before');
+      tabAfter.classList.toggle('active',  which === 'after');
+      img.onload = () => resetView(true);
+      if (img.complete && img.naturalWidth) resetView(true);
+    }
+
+    // Функция открытия — доступна вне
+    window.openPhotoLb = function(which) {
+      imgSrcs = { before: _detailImgs.before, after: _detailImgs.after };
+      // включаем / выключаем вкладки
+      tabBefore.classList.toggle('no-img', !imgSrcs.before);
+      tabAfter.classList.toggle('no-img',  !imgSrcs.after);
+      // если выбранное фото нет — переключаемся
+      if (!imgSrcs[which]) which = imgSrcs.before ? 'before' : 'after';
+      if (!imgSrcs[which]) return; // нечего смотреть
+      lb.classList.add('open');
+      document.body.style.overflow = 'hidden';
+      switchPhoto(which);
+    };
+
+    window.closePhotoLb = function() {
+      lb.classList.remove('open');
+      img.src = '';
+      if(!overlay.classList.contains('open') && !detailOverlay.classList.contains('open'))
+        document.body.style.overflow = '';
+    };
+
+    // Кнопки
+    $('plbClose').addEventListener('click', closePhotoLb);
+    $('plbZoomIn').addEventListener('click',  () => { zoom( 0.25); applyTransform(true); });
+    $('plbZoomOut').addEventListener('click', () => { zoom(-0.25); applyTransform(true); });
+    $('plbZoomFit').addEventListener('click', () => resetView(true));
+    $('plbZoom100').addEventListener('click', () => { scale = 1; offX = 0; offY = 0; applyTransform(true); });
+    tabBefore.addEventListener('click', () => switchPhoto('before'));
+    tabAfter.addEventListener('click',  () => switchPhoto('after'));
+
+    // Клавиши (работают когда лайтбокс открыт)
+    document.addEventListener('keydown', e => {
+      if (!lb.classList.contains('open')) return;
+      if (e.key === '+' || e.key === '=') { e.preventDefault(); zoom( 0.25); applyTransform(true); }
+      if (e.key === '-' || e.key === '_') { e.preventDefault(); zoom(-0.25); applyTransform(true); }
+      if (e.key === '0')                  { e.preventDefault(); resetView(true); }
+      if (e.key === '1')                  { e.preventDefault(); scale=1; offX=0; offY=0; applyTransform(true); }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        switchPhoto(currentWhich === 'before' ? 'after' : 'before');
+      }
+    });
+
+    // Колесико мыши — зум относительно курсора
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const cx = e.clientX - rect.left - rect.width  / 2;
+      const cy = e.clientY - rect.top  - rect.height / 2;
+      const delta = e.deltaY < 0 ? 0.12 : -0.12;
+      zoom(delta, cx + offX, cy + offY);
+    }, { passive: false });
+
+    // Перетаскивание мышью
+    let dragging = false, dragStartX = 0, dragStartY = 0, dragOffX = 0, dragOffY = 0;
+    canvas.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      dragging = true;
+      dragStartX = e.clientX; dragStartY = e.clientY;
+      dragOffX = offX; dragOffY = offY;
+      canvas.classList.add('dragging');
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      offX = dragOffX + (e.clientX - dragStartX);
+      offY = dragOffY + (e.clientY - dragStartY);
+      applyTransform(false);
+    });
+    document.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      dragging = false;
+      canvas.classList.remove('dragging');
+    });
+
+    // Touch: pinch-zoom + pan
+    let lastTouches = null;
+    canvas.addEventListener('touchstart', e => {
+      lastTouches = e.touches;
+      if (e.touches.length === 1) {
+        dragStartX = e.touches[0].clientX;
+        dragStartY = e.touches[0].clientY;
+        dragOffX = offX; dragOffY = offY;
+      }
+      e.preventDefault();
+    }, { passive: false });
+    canvas.addEventListener('touchmove', e => {
+      e.preventDefault();
+      if (e.touches.length === 2 && lastTouches && lastTouches.length === 2) {
+        const d1 = Math.hypot(lastTouches[0].clientX - lastTouches[1].clientX, lastTouches[0].clientY - lastTouches[1].clientY);
+        const d2 = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        if (d1 > 0) zoom((d2 - d1) / d1 * 0.8);
+      } else if (e.touches.length === 1) {
+        offX = dragOffX + (e.touches[0].clientX - dragStartX);
+        offY = dragOffY + (e.touches[0].clientY - dragStartY);
+        applyTransform(false);
+      }
+      lastTouches = e.touches;
+    }, { passive: false });
+    canvas.addEventListener('touchend', e => {
+      if (e.touches.length === 0 && e.changedTouches.length === 2) { /* pinch end — nothing */ }
+      lastTouches = null;
+    });
+  })();
+
+  /* ─── COMPAT: старый closeLightbox для esc-обработчика ── */
+  function closeLightbox() { /* no-op, заменён новым лайтбоксом */ }
+
+  /* ─── TOAST ───────────────────────────────────── */
+  let toastT = null;
+  function showToast(msg, ok) { toastMsg.textContent=msg; toast.style.borderColor=ok?'rgba(52,211,153,.35)':'rgba(251,191,36,.35)'; toast.style.color=ok?'var(--green)':'var(--yellow)'; toast.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>toast.classList.remove('show'),3000); }
+
+  /* ─── HELPERS ─────────────────────────────────── */
+  function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function fmtDate(d) { if(!d) return ''; const [y,m,day]=d.split('-'); return day+'.'+m+'.'+y; }
+
+  /* ─── RENDER ──────────────────────────────────── */
+  function renderAll() {
+    const trades = getTrades(); tradesGrid.innerHTML = '';
+    statTotal.textContent = trades.length;
+    statWin.textContent  = trades.filter(t=>t.result==='profit').length;
+    statLoss.textContent = trades.filter(t=>t.result==='loss').length;
+    const rrN = trades.map(t=>{ if(!t.rr) return NaN; const m=t.rr.match(/[\d.]+\s*[:/]\s*([\d.]+)/); return m?parseFloat(m[1]):NaN; }).filter(n=>!isNaN(n));
+    statRR.textContent = rrN.length ? (rrN.reduce((a,b)=>a+b,0)/rrN.length).toFixed(1) : '—';
+    const rN = trades.map(t=>parseFloat(t.riskPct)).filter(n=>!isNaN(n));
+    statRisk.textContent = rN.length ? (rN.reduce((a,b)=>a+b,0)/rN.length).toFixed(1)+'%' : '—';
+
+    if (!trades.length) { tradesGrid.innerHTML='<div class="empty-state" style="grid-column:1/-1"><div class="icon">📋</div><p>Сделок пока нет.<br/>Нажмите <strong>«Добавить сделку»</strong>, чтобы начать.</p></div>'; return; }
+
+    trades.forEach(t => {
+      const card = document.createElement('article');
+      card.className='trade-card'; card.dataset.id=t.id; card.setAttribute('tabindex','0'); card.setAttribute('role','button');
+      // Создаём placeholder, загружаем картинку из IndexedDB асинхронно
+      let imgEl = document.createElement('div');
+      imgEl.className = 'trade-card-img-placeholder';
+      imgEl.textContent = '📉';
+      const cardImgEl = imgEl; // ссылка для замены после загрузки
+      loadImages(t.id).then(({before, after}) => {
+        const cover = before || after;
+        if (cover) {
+          const newImg = document.createElement('img');
+          newImg.className = 'trade-card-img';
+          newImg.src = cover;
+          newImg.alt = '';
+          newImg.loading = 'lazy';
+          if (cardImgEl.parentNode) cardImgEl.parentNode.replaceChild(newImg, cardImgEl);
+        }
+      });
+      const dirH  = t.direction ? '<span class="direction-tag '+(dirClass[t.direction]||'')+'">'+esc(dirLabel[t.direction]||t.direction)+'</span>' : '';
+      const riskH = t.risk      ? '<span class="risk-badge '+(riskClass[t.risk]||'')+'">'+esc(riskLabel[t.risk]||t.risk)+'</span>' : '';
+      const resH  = t.result    ? '<span class="result-badge '+(resClass[t.result]||'')+'">'+esc(resLabel[t.result]||t.result)+'</span>' : '';
+      const chips=[]; if(t.timeframe)chips.push('⏱ '+t.timeframe); if(t.rr)chips.push('RR: '+t.rr); if(t.riskPct)chips.push('Риск: '+t.riskPct+'%');
+      const chipsH = chips.length ? '<div class="trade-chips">'+chips.map(c=>'<span class="chip">'+esc(c)+'</span>').join('')+'</div>' : '';
+      card.appendChild(imgEl);
+      const bodyDiv = document.createElement('div');
+      bodyDiv.className = 'trade-card-body';
+      bodyDiv.innerHTML =
+          '<div class="trade-card-header"><span class="asset-tag">'+esc(t.asset||'')+'</span><div style="display:flex;gap:5px;flex-wrap:wrap">'+dirH+riskH+resH+'</div></div>' +
+          '<div class="trade-datetime">📅 '+fmtDate(t.date)+'&nbsp;⏰ '+t.time+'</div>' +
+          chipsH +
+          (t.reason?'<p class="trade-desc-preview">'+esc(t.reason)+'</p>':'') +
+          '<div class="trade-card-footer">' +
+            '<span class="open-hint"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Открыть детали</span>' +
+            '<button class="btn-delete" data-id="'+t.id+'" aria-label="Удалить"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M5 4V2h6v2M6 7v5M10 7v5M3 4l1 10h8l1-10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Удалить</button>' +
+          '</div>';
+      card.appendChild(bodyDiv);
+      tradesGrid.appendChild(card);
+    });
+  }
+
+  /* ─── CARD EVENTS ─────────────────────────────── */
+  tradesGrid.addEventListener('click', async e => {
+    const del = e.target.closest('.btn-delete');
+    if (del) { e.stopPropagation(); if(!confirm('Удалить эту сделку?')) return; const id=Number(del.dataset.id); const remaining=getTrades().filter(t=>t.id!==id); saveTrades(remaining); await deleteImages(id); renderAll(); updateChart(); pushToFirebase(remaining); showToast('Удалено',true); return; }
+    const card = e.target.closest('.trade-card');
+    if (card) { const t=getTrades().find(t=>t.id===Number(card.dataset.id)); if(t) openDetail(t); }
+  });
+  tradesGrid.addEventListener('keydown', e => {
+    if (e.key==='Enter'||e.key===' ') { const card=e.target.closest('.trade-card'); if(card){e.preventDefault();const t=getTrades().find(t=>t.id===Number(card.dataset.id));if(t)openDetail(t);} }
+  });
+
+  /* ─── TABS ────────────────────────────────────── */
+  const tabBtnJournal = $('tabBtnJournal');
+  const tabBtnChart   = $('tabBtnChart');
+  const pageJournal   = $('pageJournal');
+  const pageChart     = $('pageChart');
+
+  function switchTab(tab) {
+    if (tab === 'chart') {
+      tabBtnJournal.classList.remove('active'); tabBtnChart.classList.add('active');
+      pageJournal.classList.remove('active');   pageChart.classList.add('active');
+      tabBtnJournal.setAttribute('aria-selected','false'); tabBtnChart.setAttribute('aria-selected','true');
+      updateChart();
+    } else {
+      tabBtnChart.classList.remove('active'); tabBtnJournal.classList.add('active');
+      pageChart.classList.remove('active');   pageJournal.classList.add('active');
+      tabBtnChart.setAttribute('aria-selected','false'); tabBtnJournal.setAttribute('aria-selected','true');
+    }
+  }
+  tabBtnJournal.addEventListener('click', () => switchTab('journal'));
+  tabBtnChart.addEventListener('click',   () => switchTab('chart'));
+
+  /* ─── CHART ───────────────────────────────────── */
+  let balChart = null;
+
+  function updateChart() {
+    const trades = getTrades().slice().reverse(); // хронологический порядок
+    const withBal = trades.filter(t => t.balAfter != null);
+    const chartEmpty = $('chartEmpty');
+    const canvas = $('balanceChart');
+
+    if (!withBal.length) {
+      chartEmpty.style.display = 'block';
+      canvas.style.display = 'none';
+      // Показываем начальный баланс, остальное —
+      $('chartStatStart').textContent = getInitialBalance().toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2});
+      $('chartStatCurrent').textContent = '—';
+      $('chartStatDelta').textContent = '—';
+      $('chartStatDelta').style.color = 'var(--muted)';
+      if (balChart) { balChart.destroy(); balChart = null; }
+    } else {
+      chartEmpty.style.display = 'none';
+      canvas.style.display = 'block';
+
+      const labels = withBal.map((t,i) => '#'+(i+1)+' '+t.asset);
+      const values = withBal.map(t => t.balAfter);
+      const first  = withBal[0].balBefore != null ? withBal[0].balBefore : getInitialBalance();
+      const last   = values[values.length-1];
+      const delta  = last - first;
+      const isPos  = delta >= 0;
+
+      // Обновить блоки статистики
+      $('chartStatStart').textContent   = first.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2});
+      $('chartStatCurrent').textContent = last.toLocaleString('ru-RU',  {minimumFractionDigits:2, maximumFractionDigits:2});
+      $('chartStatDelta').textContent   = (isPos?'+':'')+delta.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2});
+      $('chartStatDelta').style.color   = isPos ? 'var(--green)' : 'var(--red)';
+
+      const accentColor = isPos ? '52,211,153' : '248,113,113';
+
+      if (balChart) balChart.destroy();
+      balChart = new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Баланс',
+            data: values,
+            borderColor: `rgba(${accentColor},1)`,
+            backgroundColor: function(ctx) {
+              const chart = ctx.chart;
+              const {ctx: c, chartArea} = chart;
+              if (!chartArea) return 'transparent';
+              const grad = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+              grad.addColorStop(0, `rgba(${accentColor},.35)`);
+              grad.addColorStop(1, `rgba(${accentColor},0)`);
+              return grad;
+            },
+            borderWidth: 2.5,
+            pointRadius: 5,
+            pointHoverRadius: 8,
+            pointBackgroundColor: `rgba(${accentColor},1)`,
+            pointBorderColor: '#14171f',
+            pointBorderWidth: 2,
+            fill: true,
+            tension: 0.42,
+          }]
+        },
+        options: {
+          responsive: true,
+          animation: { duration: 600, easing: 'easeInOutQuart' },
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#1a1d27',
+              borderColor: 'rgba(91,108,249,.3)',
+              borderWidth: 1,
+              titleColor: '#e8eaf0',
+              bodyColor: '#6b7280',
+              padding: 12,
+              callbacks: {
+                label: ctx => ' Баланс: ' + ctx.parsed.y.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2})
+              }
+            }
+          },
+          scales: {
+            x: {
+              ticks: { color:'#6b7280', font:{size:11}, maxRotation:30 },
+              grid: { color:'rgba(37,40,54,.8)' },
+              border: { color:'rgba(37,40,54,1)' }
+            },
+            y: {
+              ticks: { color:'#6b7280', font:{size:11}, callback: v => v.toLocaleString('ru-RU') },
+              grid: { color:'rgba(37,40,54,.8)' },
+              border: { color:'rgba(37,40,54,1)' }
+            }
+          }
+        }
+      });
+    }
+
+    // Обновить панель «Мои минусы»
+    updateMistakes();
+  }
+
+  function updateMistakes() {
+    const trades = getTrades().slice().reverse(); // хронологический порядок
+    const losses = trades.filter(t => t.result === 'loss');
+    const list   = $('mistakesList');
+    const count  = $('mistakesCount');
+
+    count.textContent = losses.length + (losses.length === 1 ? ' убыток' :
+      losses.length >= 2 && losses.length <= 4 ? ' убытка' : ' убытков');
+
+    if (!losses.length) {
+      list.innerHTML = '<div class="mistakes-empty"><div class="icon">🎯</div><p>Убыточных сделок нет.<br/>Отличная работа!</p></div>';
+      return;
+    }
+
+    list.innerHTML = losses.map((t, i) => {
+      const num      = '#' + (i + 1);
+      const asset    = esc(t.asset || '—');
+      const date     = fmtDate(t.date) + (t.time ? ' · ' + t.time : '');
+      const tf       = t.timeframe ? ' · ' + t.timeframe : '';
+      const dir      = t.direction ? ' · ' + (t.direction === 'long' ? '📈 Long' : '📉 Short') : '';
+      const mistakeHtml = t.mistake
+        ? '<div class="mistake-item-label">⚠️ Моя ошибка / Input</div><div class="mistake-item-text">' + esc(t.mistake) + '</div>'
+        : '<div class="mistake-item-no-text">Ошибка не описана</div>';
+      return `<div class="mistake-item">
+        <div class="mistake-item-header">
+          <span style="font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums">${num}</span>
+          <span class="mistake-item-asset">${asset}${tf}</span>
+          <span style="font-size:.72rem;color:var(--muted)">${date}${dir}</span>
+        </div>
+        ${mistakeHtml}
+      </div>`;
+    }).join('');
+  }
+
+  /* ─── МИГРАЦИЯ: перенос base64 из localStorage в IndexedDB ─ */
+  async function migrateImages() {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    let trades;
+    try { trades = JSON.parse(raw); } catch { return; }
+    let changed = false;
+    for (const t of trades) {
+      if (t.imageBefore || t.imageAfter) {
+        await saveImages(t.id, t.imageBefore || null, t.imageAfter || null);
+        delete t.imageBefore; delete t.imageAfter;
+        changed = true;
+      }
+    }
+    if (changed) localStorage.setItem(STORAGE_KEY, JSON.stringify(trades));
+  }
+
+  migrateImages().then(() => { renderAll(); updateChart(); });
+
+  /* ─── FIREBASE SYNC ──────────────────────────── */
+  // ⚠️ ВСТАВЬТЕ ВАШУ КОНФИГУРАЦИЮ FIREBASE СЮДА:
+  // 1. Зайдите на https://console.firebase.google.com
+  // 2. Создайте проект → Realtime Database → Режим тестирования
+  // 3. Нажмите «Настройки проекта» → Ваши приложения → Веб-приложение
+  // 4. Скопируйте объект firebaseConfig и вставьте ниже
+  const FIREBASE_CONFIG = {
+    apiKey: "",
+    authDomain: "",
+    databaseURL: "",   // ← обязательно! пример: https://MY-PROJECT-default-rtdb.firebaseio.com
+    projectId: "",
+    storageBucket: "",
+    messagingSenderId: "",
+    appId: ""
+  };
+
+  const SYNC_CODE_LS = 'tradelog_sync_code';
+  let syncCode = localStorage.getItem(SYNC_CODE_LS);
+  if (!syncCode) {
+    syncCode = Math.random().toString(36).substr(2,4).toUpperCase() +
+               Math.random().toString(36).substr(2,4).toUpperCase();
+    localStorage.setItem(SYNC_CODE_LS, syncCode);
+  }
+
+  let firebaseDb = null;
+  let syncEnabled = false;
+  let remoteListener = null;
+
+  function isFbConfigured() {
+    return FIREBASE_CONFIG.databaseURL && FIREBASE_CONFIG.databaseURL.length > 0;
+  }
+
+  function initFirebase() {
+    if (!isFbConfigured()) return;
+    try {
+      if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+      firebaseDb = firebase.database();
+      syncEnabled = true;
+      setSyncStatus('online');
+      attachRemoteListener();
+      // Если удалённые данные есть — загружаем, иначе отправляем локальные
+      firebaseDb.ref('trades/' + syncCode).once('value').then(snap => {
+        const remote = snap.val();
+        if (remote && Object.keys(remote).length > 0) {
+          const arr = Object.values(remote).sort((a,b) => b.id - a.id);
+          saveTrades(arr);
+          renderAll();
+          updateChart();
+        } else {
+          pushToFirebase(getTrades());
+        }
+      }).catch(console.warn);
+    } catch(e) {
+      console.warn('Firebase init failed:', e);
+      syncEnabled = false;
+    }
+  }
+
+  function attachRemoteListener() {
+    if (!firebaseDb) return;
+    if (remoteListener) firebaseDb.ref('trades/' + syncCode).off('value', remoteListener);
+    remoteListener = firebaseDb.ref('trades/' + syncCode).on('value', snap => {
+      const remote = snap.val();
+      if (!remote) return;
+      const arr = Object.values(remote).sort((a,b) => b.id - a.id);
+      // Сравниваем с локальными чтобы не зациклиться
+      const local = JSON.stringify(getTrades());
+      const remoteStr = JSON.stringify(arr);
+      if (local !== remoteStr) {
+        saveTrades(arr);
+        renderAll();
+        updateChart();
+      }
+    });
+  }
+
+  function pushToFirebase(trades) {
+    if (!firebaseDb || !syncEnabled) return;
+    setSyncStatus('syncing');
+    const obj = {};
+    trades.forEach(t => { obj[t.id] = t; });
+    firebaseDb.ref('trades/' + syncCode).set(obj)
+      .then(() => setSyncStatus('online'))
+      .catch(e => { console.warn('Push failed:', e); setSyncStatus('offline'); });
+  }
+
+  function setSyncStatus(status) {
+    const dot = $('syncDot');
+    if (!dot) return;
+    dot.className = 'sync-dot ' + (status === 'online' ? 'online' : status === 'syncing' ? 'syncing' : '');
+    const statusDot = document.getElementById('syncModalStatusDot');
+    const statusText = document.getElementById('syncModalStatusText');
+    if (statusDot) statusDot.className = 'sync-status-dot ' + (status === 'online' ? 'online' : '');
+    if (statusText) statusText.textContent = status === 'online' ? 'Подключено к Firebase' : status === 'syncing' ? 'Синхронизация...' : 'Нет подключения (localStorage)';
+  }
+
+  // Перехватываем save/delete чтобы дополнительно пушить в Firebase
+  const _origSaveTrades = saveTrades;
+  // saveTrades уже определена выше, обернём вызовы ниже
+  function saveAndSync(trades) {
+    saveTrades(trades);
+    pushToFirebase(trades);
+  }
+
+  /* ─── SYNC MODAL ──────────────────────────────── */
+  const syncModalHTML = `
+  <div class="sync-modal-overlay" id="syncOverlay">
+    <div class="sync-modal">
+      <div class="sync-modal-title">🔄 Синхронизация устройств</div>
+      <div class="sync-modal-sub">Используйте один код на всех устройствах — данные будут мгновенно синхронизироваться между ПК и телефоном.</div>
+      <div class="sync-code-display">
+        <span class="sync-code-val" id="syncCodeDisplay">${syncCode}</span>
+        <button class="btn-copy" id="btnCopyCode">Копировать</button>
+      </div>
+      <div class="sync-divider">или введите код с другого устройства</div>
+      <div class="sync-input-row">
+        <input type="text" id="syncCodeInput" placeholder="Введите код..." maxlength="8" />
+        <button class="btn-connect" id="btnConnect">Подключить</button>
+      </div>
+      <div class="sync-status-row">
+        <span class="sync-status-dot" id="syncModalStatusDot"></span>
+        <span id="syncModalStatusText">Проверка подключения...</span>
+      </div>
+      <div class="sync-close-row">
+        <button class="btn-cancel" id="btnSyncClose">Закрыть</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend', syncModalHTML);
+
+  const syncOverlay = $('syncOverlay');
+  $('btnSync').addEventListener('click', () => {
+    $('syncCodeDisplay').textContent = syncCode;
+    $('syncCodeInput').value = '';
+    setSyncStatus(syncEnabled ? 'online' : 'offline');
+    syncOverlay.classList.add('open');
+  });
+  $('btnSyncClose').addEventListener('click', () => syncOverlay.classList.remove('open'));
+  syncOverlay.addEventListener('click', e => { if(e.target===syncOverlay) syncOverlay.classList.remove('open'); });
+
+  $('btnCopyCode').addEventListener('click', () => {
+    navigator.clipboard.writeText(syncCode).then(() => {
+      $('btnCopyCode').textContent = 'Скопировано!';
+      setTimeout(() => { $('btnCopyCode').textContent = 'Копировать'; }, 2000);
+    }).catch(() => {
+      prompt('Скопируйте код:', syncCode);
+    });
+  });
+
+  $('btnConnect').addEventListener('click', () => {
+    const newCode = $('syncCodeInput').value.trim().toUpperCase();
+    if (!newCode || newCode.length < 4) { showToast('Введите корректный код', false); return; }
+    syncCode = newCode;
+    localStorage.setItem(SYNC_CODE_LS, syncCode);
+    $('syncCodeDisplay').textContent = syncCode;
+    if (remoteListener) firebaseDb && firebaseDb.ref('trades/' + syncCode).off('value', remoteListener);
+    if (syncEnabled) {
+      setSyncStatus('syncing');
+      attachRemoteListener();
+      firebaseDb.ref('trades/' + syncCode).once('value').then(snap => {
+        const remote = snap.val();
+        if (remote && Object.keys(remote).length > 0) {
+          const arr = Object.values(remote).sort((a,b) => b.id - a.id);
+          saveTrades(arr); renderAll(); updateChart();
+          showToast('Данные синхронизированы!', true);
+          setSyncStatus('online');
+        } else {
+          showToast('Код подключён. Данных пока нет.', true);
+          setSyncStatus('online');
+        }
+      });
+    } else {
+      showToast('Firebase не настроен — код сохранён локально', false);
+    }
+    syncOverlay.classList.remove('open');
+  });
+
+  // Переопределяем удаление чтобы тоже пушило в Firebase
+  const origTradesClickHandler = tradesGrid.onclick;
+  // Патчим уже навешанный обработчик через document-уровень:
+  document.addEventListener('tradelog:changed', () => pushToFirebase(getTrades()));
+
+  // Инициализируем Firebase при загрузке
+  initFirebase();
+  if (!isFbConfigured()) setSyncStatus('offline');
+
+</script>
+
+<!-- Sync modal note -->
+</body>
+</html>
